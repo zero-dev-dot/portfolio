@@ -6,23 +6,23 @@
       <span id="score-display" class="font-bold text-sky-900">Score: 0</span>
       <div class="flex gap-2 items-center">
         <div class="flex rounded-full overflow-hidden border-2 border-sky-200 text-xs font-semibold">
-          {['Easy','Medium','Hard'].map((d, i) => (
+          {['Easy','Medium','Hard'].map((d) => (
             <button class="diff-btn px-3 py-1 transition-colors text-sky-700 hover:bg-sky-100" data-diff={d.toLowerCase()}>{d}</button>
           ))}
         </div>
-        <button id="close-game" class="bg-white text-sky-700 font-bold px-4 py-1 rounded-full shadow hover:shadow-md transition-all">✕ Stop</button>
+        <button id="close-game" disabled class="bg-white text-sky-400 font-bold px-4 py-1 rounded-full shadow transition-all opacity-40 cursor-not-allowed">✕ Stop</button>
       </div>
     </div>
     <div class="relative">
       <canvas id="game-canvas" width="400" height="380" class="rounded-2xl shadow-xl"></canvas>
       <div id="start-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-sky-100/80 rounded-2xl gap-4">
-        <p class="text-sky-900 font-bold text-2xl">☁️ Catch the Clouds!</p>
-        <p class="text-sky-700 text-sm">Use ← → or A / D to move</p>
+        <p class="text-sky-900 font-bold text-2xl">🚀 Shoot the Clouds!</p>
+        <p class="text-sky-700 text-sm">← → / A D to move &nbsp;|&nbsp; Space to shoot</p>
         <button id="start-btn" class="bg-sky-700 text-white font-bold px-8 py-3 rounded-full hover:bg-sky-900 transition-colors">▶ Start</button>
         <div id="leaderboard" class="text-center"></div>
       </div>
     </div>
-    <p class="text-sky-700 text-xs">← → Arrow keys or A / D to move</p>
+    <p class="text-sky-700 text-xs">← → Arrow keys or A / D to move &nbsp;|&nbsp; Space to shoot</p>
   </div>
 
   <div id="game-over-screen" style="display:none;" class="flex flex-col items-center gap-4 bg-white rounded-2xl p-8 shadow-xl">
@@ -41,7 +41,9 @@
   const ctx = canvas.getContext('2d')!;
   const scoreDisplay = document.getElementById('score-display')!;
   const finalScore = document.getElementById('final-score')!;
-  // Difficulty pill buttons
+  const W = canvas.width, H = canvas.height;
+
+  // Difficulty
   let currentDiff = 'medium';
   document.querySelectorAll('.diff-btn').forEach(btn => {
     const b = btn as HTMLElement;
@@ -52,24 +54,19 @@
         (x as HTMLElement).classList.remove('bg-sky-700', 'text-white');
         (x as HTMLElement).classList.add('text-sky-700');
       });
-      b.classList.add('bg-sky-700', 'text-white');
-      b.classList.remove('text-sky-700');
+      b.classList.add('bg-sky-700', 'text-white'); b.classList.remove('text-sky-700');
     });
   });
 
   const DIFF = {
-    easy:   { speed: 1.0, spawnMin: 80, speedInc: 0.008 },
-    medium: { speed: 1.5, spawnMin: 60, speedInc: 0.015 },
-    hard:   { speed: 2.5, spawnMin: 35, speedInc: 0.025 },
+    easy:   { speed: 0.8, spawnMin: 90, speedInc: 0.006 },
+    medium: { speed: 1.2, spawnMin: 65, speedInc: 0.012 },
+    hard:   { speed: 2.0, spawnMin: 38, speedInc: 0.022 },
   };
 
-  function getLeaderboard(): number[] {
-    return JSON.parse(localStorage.getItem('cloud-scores') || '[]');
-  }
+  function getLeaderboard(): number[] { return JSON.parse(localStorage.getItem('cloud-scores') || '[]'); }
   function saveScore(s: number) {
-    const scores = getLeaderboard();
-    scores.push(s);
-    scores.sort((a, b) => b - a);
+    const scores = getLeaderboard(); scores.push(s); scores.sort((a, b) => b - a);
     localStorage.setItem('cloud-scores', JSON.stringify(scores.slice(0, 5)));
   }
   function renderLeaderboard(el: HTMLElement) {
@@ -78,85 +75,189 @@
     el.innerHTML = '<p class="font-bold text-sky-900 mb-1">🏆 Top Scores</p>' +
       scores.map((s, i) => `<p class="text-sky-700 text-xs">${i + 1}. ${s} clouds</p>`).join('');
   }
-
   renderLeaderboard(document.getElementById('leaderboard')!);
 
-  document.getElementById('start-btn')!.onclick = () => { startScreen.style.display = 'none'; startGame(); };
-  document.getElementById('close-game')!.onclick = () => { cancelAnimationFrame(raf); startScreen.style.display = 'flex'; renderLeaderboard(document.getElementById('leaderboard')!); };
-  document.getElementById('restart-btn')!.onclick = () => { gameOverScreen.style.display = 'none'; gameArea.style.display = 'flex'; startScreen.style.display = 'flex'; renderLeaderboard(document.getElementById('leaderboard')!); };
+  const closeBtn = document.getElementById('close-game') as HTMLButtonElement;
+  document.getElementById('start-btn')!.onclick = () => {
+    startScreen.style.display = 'none';
+    closeBtn.disabled = false; closeBtn.className = 'bg-white text-sky-700 font-bold px-4 py-1 rounded-full shadow hover:shadow-md transition-all';
+    startGame();
+  };
+  closeBtn.onclick = () => {
+    cancelAnimationFrame(raf);
+    closeBtn.disabled = true; closeBtn.className = 'bg-white text-sky-400 font-bold px-4 py-1 rounded-full shadow transition-all opacity-40 cursor-not-allowed';
+    score = 0; lives = 3; clouds = []; rockets = []; explosions = [];
+    scoreDisplay.textContent = 'Score: 0'; ctx.clearRect(0, 0, W, H);
+    startScreen.style.display = 'flex'; renderLeaderboard(document.getElementById('leaderboard')!);
+  };
+  document.getElementById('restart-btn')!.onclick = () => {
+    gameOverScreen.style.display = 'none'; gameArea.style.display = 'flex';
+    closeBtn.disabled = true; closeBtn.className = 'bg-white text-sky-400 font-bold px-4 py-1 rounded-full shadow transition-all opacity-40 cursor-not-allowed';
+    startScreen.style.display = 'flex'; renderLeaderboard(document.getElementById('leaderboard')!);
+  };
 
-  const skills = ['Web Dev','Mobile App','C++','ERP','React','Flutter','SQL','API','UI/UX','Cloud'];
-  const W = canvas.width, H = canvas.height;
+  const skillLabels = ['Web Dev','Mobile','C++','ERP','React','Flutter','SQL','API','UI/UX','Cloud'];
 
-  let player: { x: number; w: number; h: number; speed: number };
-  let clouds: { x: number; y: number; w: number; label: string; speed: number; caught: boolean }[];
-  let score: number, lives: number, raf: number, keys: Record<string, boolean>, spawnTimer: number;
+  type Cloud  = { x: number; y: number; w: number; label: string; speed: number; dead: boolean };
+  type Rocket = { x: number; y: number; speed: number };
+  type Explosion = { x: number; y: number; r: number; maxR: number; alpha: number };
+
+  let player: { x: number; w: number; speed: number };
+  let clouds: Cloud[], rockets: Rocket[], explosions: Explosion[];
+  let score: number, lives: number, raf: number, keys: Record<string, boolean>;
+  let spawnTimer: number, shootCooldown: number;
 
   function startGame() {
     const d = DIFF[currentDiff as keyof typeof DIFF];
-    player = { x: W / 2 - 40, w: 80, h: 18, speed: 6 };
-    clouds = [];
-    score = 0; lives = 3; spawnTimer = 0;
+    player = { x: W / 2 - 24, w: 48, speed: 6 };
+    clouds = []; rockets = []; explosions = [];
+    score = 0; lives = 3; spawnTimer = 0; shootCooldown = 0;
     keys = {};
     scoreDisplay.textContent = 'Score: 0';
     cancelAnimationFrame(raf);
     loop(d);
   }
 
-  function spawnCloud(baseSpeed: number, speedInc: number) {
+  function spawnCloud(d: typeof DIFF.medium) {
     const w = 80 + Math.random() * 40;
-    clouds.push({ x: Math.random() * (W - w), y: -40, w, label: skills[Math.floor(Math.random() * skills.length)], speed: baseSpeed + score * speedInc, caught: false });
+    clouds.push({ x: Math.random() * (W - w), y: -40, w, label: skillLabels[Math.floor(Math.random() * skillLabels.length)], speed: d.speed + score * d.speedInc, dead: false });
   }
 
-  function drawCloud(x: number, y: number, w: number, label: string, caught: boolean) {
-    ctx.fillStyle = caught ? '#b0f0c0' : '#fff';
-    ctx.shadowColor = 'rgba(0,0,0,0.12)';
-    ctx.shadowBlur = 8;
-    ctx.beginPath(); ctx.ellipse(x + w / 2, y + 20, w / 2, 13, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(x + w * 0.3, y + 13, 14, 12, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(x + w * 0.6, y + 9, 18, 14, 0, 0, Math.PI * 2); ctx.fill();
+  function shoot() {
+    if (shootCooldown > 0) return;
+    rockets.push({ x: player.x + player.w / 2, y: H - 70, speed: 10 });
+    shootCooldown = 12;
+  }
+
+  function drawCloud(c: Cloud) {
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.12)'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.ellipse(c.x + c.w / 2, c.y + 20, c.w / 2, 13, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(c.x + c.w * 0.3, c.y + 13, 14, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(c.x + c.w * 0.6, c.y + 9, 18, 14, 0, 0, Math.PI * 2); ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#2a6496'; ctx.font = 'bold 12px Segoe UI, sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(label, x + w / 2, y + 24);
+    ctx.fillStyle = '#2a6496'; ctx.font = 'bold 11px Segoe UI, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(c.label, c.x + c.w / 2, c.y + 24);
   }
 
-  function drawPlayer(x: number) {
-    const y = H - 55;
-    ctx.fillStyle = '#2a6496'; ctx.beginPath(); ctx.roundRect(x, y, player.w, player.h, 8); ctx.fill();
-    ctx.fillStyle = '#1a4a6e'; ctx.beginPath(); ctx.arc(x + player.w / 2, y - 16, 11, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#87ceeb'; ctx.fillRect(x + player.w / 2 - 9, y - 5, 18, 12);
+  function drawRocket(r: Rocket) {
+    // body
+    ctx.fillStyle = '#0ea5e9';
+    ctx.beginPath(); ctx.roundRect(r.x - 3, r.y, 6, 14, 2); ctx.fill();
+    // nose
+    ctx.fillStyle = '#0284c7';
+    ctx.beginPath(); ctx.moveTo(r.x - 3, r.y); ctx.lineTo(r.x + 3, r.y); ctx.lineTo(r.x, r.y - 6); ctx.fill();
+    // flame
+    ctx.fillStyle = '#fb923c';
+    ctx.beginPath(); ctx.ellipse(r.x, r.y + 16, 3, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath(); ctx.ellipse(r.x, r.y + 18, 2, 3, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawPlayer() {
+    const px = player.x, py = H - 60;
+    // gyrocopter hull
+    ctx.fillStyle = '#78716c';
+    ctx.beginPath(); ctx.ellipse(px + player.w / 2, py + 14, player.w / 2, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a8a29e';
+    ctx.beginPath(); ctx.ellipse(px + player.w / 2, py + 12, player.w / 2 - 3, 9, 0, 0, Math.PI * 2); ctx.fill();
+    // cockpit
+    ctx.fillStyle = 'rgba(186,230,253,0.85)';
+    ctx.beginPath(); ctx.ellipse(px + player.w / 2, py + 8, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
+    // rotor
+    ctx.strokeStyle = '#a8a29e'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + player.w, py); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(px + player.w / 2, py - 8); ctx.lineTo(px + player.w / 2, py + 8); ctx.stroke();
+    // gun barrel pointing up
+    ctx.fillStyle = '#44403c';
+    ctx.beginPath(); ctx.roundRect(px + player.w / 2 - 2, py - 10, 4, 12, 1); ctx.fill();
+    // skids
+    ctx.strokeStyle = '#57534e'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(px + 4, py + 24); ctx.lineTo(px + 20, py + 24); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(px + player.w - 20, py + 24); ctx.lineTo(px + player.w - 4, py + 24); ctx.stroke();
+  }
+
+  function drawExplosion(e: Explosion) {
+    ctx.globalAlpha = e.alpha;
+    ctx.fillStyle = '#fb923c';
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r * 0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'white';
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r * 0.25, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
   function loop(d: typeof DIFF.medium) {
     ctx.clearRect(0, 0, W, H);
+
+    // Move player
     if ((keys['ArrowLeft'] || keys['a']) && player.x > 0) player.x -= player.speed;
     if ((keys['ArrowRight'] || keys['d']) && player.x + player.w < W) player.x += player.speed;
+    if ((keys[' '] || keys['ArrowUp'] || keys['w'])) shoot();
+    if (shootCooldown > 0) shootCooldown--;
+
+    // Spawn clouds
     spawnTimer++;
-    if (spawnTimer > Math.max(d.spawnMin - score, 20)) { spawnCloud(d.speed, d.speedInc); spawnTimer = 0; }
-    const playerY = H - 55;
+    if (spawnTimer > Math.max(d.spawnMin - score * 0.5, 20)) { spawnCloud(d); spawnTimer = 0; }
+
+    // Move rockets
+    rockets.forEach(r => r.y -= r.speed);
+    rockets = rockets.filter(r => r.y > -20);
+
+    // Move clouds & check if reached bottom
     clouds.forEach(c => {
-      c.y += c.speed;
-      if (!c.caught && c.y + 33 >= playerY && c.y + 33 <= playerY + player.h + 10 && c.x + c.w > player.x && c.x < player.x + player.w) {
-        c.caught = true; score++; scoreDisplay.textContent = `Score: ${score}`;
+      if (!c.dead) {
+        c.y += c.speed;
+        if (c.y > H) { c.dead = true; lives--; }
       }
-      if (!c.caught && c.y > H) { c.caught = true; lives--; }
-      drawCloud(c.x, c.y, c.w, c.label, c.caught);
     });
-    clouds = clouds.filter(c => c.y <= H + 10);
-    drawPlayer(player.x);
+
+    // Rocket vs cloud collision
+    rockets.forEach(r => {
+      clouds.forEach(c => {
+        if (!c.dead && r.y < c.y + 33 && r.y > c.y - 10 && r.x > c.x && r.x < c.x + c.w) {
+          c.dead = true;
+          r.y = -999; // remove rocket
+          score++; scoreDisplay.textContent = `Score: ${score}`;
+          explosions.push({ x: c.x + c.w / 2, y: c.y + 15, r: 4, maxR: 28, alpha: 1 });
+        }
+      });
+    });
+
+    // Update explosions
+    explosions.forEach(e => { e.r += (e.maxR - e.r) * 0.2; e.alpha -= 0.06; });
+    explosions = explosions.filter(e => e.alpha > 0);
+
+    // Draw
+    clouds.filter(c => !c.dead).forEach(drawCloud);
+    rockets.forEach(drawRocket);
+    explosions.forEach(drawExplosion);
+    clouds = clouds.filter(c => !c.dead || c.y <= H + 10);
+    drawPlayer();
+
+    // HUD
     ctx.font = '16px serif'; ctx.textAlign = 'left';
     for (let i = 0; i < lives; i++) ctx.fillText('❤️', 8 + i * 24, 24);
+
     if (lives <= 0) {
       saveScore(score);
+      closeBtn.disabled = true; closeBtn.className = 'bg-white text-sky-400 font-bold px-4 py-1 rounded-full shadow transition-all opacity-40 cursor-not-allowed';
       gameArea.style.display = 'none';
       gameOverScreen.style.display = 'flex';
-      finalScore.textContent = `You caught ${score} clouds! 🎉`;
+      finalScore.textContent = `You destroyed ${score} clouds! 🎉`;
       renderLeaderboard(document.getElementById('go-leaderboard')!);
       return;
     }
     raf = requestAnimationFrame(() => loop(d));
   }
 
-  window.addEventListener('keydown', e => { keys[e.key] = true; if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault(); });
+  window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
+  });
   window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+  // Touch/click to shoot
+  canvas.addEventListener('click', () => { if (!startScreen.style.display || startScreen.style.display === 'none') shoot(); });
 </script>
