@@ -5,9 +5,9 @@
     <div class="flex justify-between items-center w-full max-w-sm">
       <span id="score-display" class="font-bold text-sky-900">Score: 0</span>
       <div class="flex gap-2 items-center">
-        <div class="flex rounded-full overflow-hidden border-2 border-sky-200 text-xs font-semibold">
+        <div class="flex gap-1 items-center">
           {['Easy','Medium','Hard'].map((d) => (
-            <button class="diff-btn px-3 py-1 transition-colors text-sky-700 hover:bg-sky-100" data-diff={d.toLowerCase()}>{d}</button>
+            <button class="diff-btn px-3 py-1 transition-colors text-sky-700 hover:bg-sky-100 outline-none rounded-full" data-diff={d.toLowerCase()}>{d}</button>
           ))}
         </div>
         <button id="close-game" disabled class="bg-white text-sky-400 font-bold px-4 py-1 rounded-full shadow transition-all opacity-40 cursor-not-allowed">✕ Stop</button>
@@ -44,11 +44,12 @@
   const W = canvas.width, H = canvas.height;
 
   // Difficulty
-  let currentDiff = 'medium';
+  let currentDiff = 'easy';
   document.querySelectorAll('.diff-btn').forEach(btn => {
     const b = btn as HTMLElement;
-    if (b.dataset.diff === 'medium') { b.classList.add('bg-sky-700', 'text-white'); b.classList.remove('text-sky-700'); }
+    if (b.dataset.diff === 'easy') { b.classList.add('bg-sky-700', 'text-white'); b.classList.remove('text-sky-700'); }
     b.addEventListener('click', () => {
+      (b as HTMLElement).blur();
       currentDiff = b.dataset.diff!;
       document.querySelectorAll('.diff-btn').forEach(x => {
         (x as HTMLElement).classList.remove('bg-sky-700', 'text-white');
@@ -59,9 +60,9 @@
   });
 
   const DIFF = {
-    easy:   { speed: 0.8, spawnMin: 90, speedInc: 0.006 },
-    medium: { speed: 1.2, spawnMin: 65, speedInc: 0.012 },
-    hard:   { speed: 2.0, spawnMin: 38, speedInc: 0.022 },
+    easy:   { speed: 0.8, spawnMin: 90, speedInc: 0.006, maxAmmo: 30, reloadRate: 60 },
+    medium: { speed: 1.2, spawnMin: 65, speedInc: 0.012, maxAmmo: 20, reloadRate: 60 },
+    hard:   { speed: 2.0, spawnMin: 38, speedInc: 0.022, maxAmmo: 10, reloadRate: 60 },
   };
 
   function getLeaderboard(): number[] { return JSON.parse(localStorage.getItem('cloud-scores') || '[]'); }
@@ -98,20 +99,22 @@
 
   const skillLabels = ['Web Dev','Mobile','C++','ERP','React','Flutter','SQL','API','UI/UX','Cloud'];
 
-  type Cloud  = { x: number; y: number; w: number; label: string; speed: number; dead: boolean };
+  type Cloud  = { x: number; y: number; w: number; label: string; speed: number; dead: boolean; bonus: boolean };
   type Rocket = { x: number; y: number; speed: number };
   type Explosion = { x: number; y: number; r: number; maxR: number; alpha: number };
 
   let player: { x: number; w: number; speed: number };
   let clouds: Cloud[], rockets: Rocket[], explosions: Explosion[];
   let score: number, lives: number, raf: number, keys: Record<string, boolean>;
-  let spawnTimer: number, shootCooldown: number;
+  let spawnTimer: number, shootCooldown: number, ammo: number, reloadTimer: number;
 
   function startGame() {
     const d = DIFF[currentDiff as keyof typeof DIFF];
     player = { x: W / 2 - 24, w: 48, speed: 6 };
     clouds = []; rockets = []; explosions = [];
     score = 0; lives = 3; spawnTimer = 0; shootCooldown = 0;
+    ammo = d.maxAmmo;
+    reloadTimer = 0;
     keys = {};
     scoreDisplay.textContent = 'Score: 0';
     cancelAnimationFrame(raf);
@@ -120,23 +123,29 @@
 
   function spawnCloud(d: typeof DIFF.medium) {
     const w = 80 + Math.random() * 40;
-    clouds.push({ x: Math.random() * (W - w), y: -40, w, label: skillLabels[Math.floor(Math.random() * skillLabels.length)], speed: d.speed + score * d.speedInc, dead: false });
+    const bonus = Math.random() < 0.2;
+    clouds.push({ x: Math.random() * (W - w), y: -40, w, label: bonus ? '🚀 +3' : skillLabels[Math.floor(Math.random() * skillLabels.length)], speed: d.speed + score * d.speedInc, dead: false, bonus });
   }
 
   function shoot() {
-    if (shootCooldown > 0) return;
+    if (shootCooldown > 0 || ammo <= 0) return;
     rockets.push({ x: player.x + player.w / 2, y: H - 70, speed: 10 });
     shootCooldown = 12;
+    ammo--;
   }
 
   function drawCloud(c: Cloud) {
-    ctx.fillStyle = '#fff';
-    ctx.shadowColor = 'rgba(0,0,0,0.12)'; ctx.shadowBlur = 8;
+    ctx.fillStyle = c.bonus ? '#fef9c3' : '#fff';
+    ctx.shadowColor = c.bonus ? 'rgba(251,191,36,0.5)' : 'rgba(0,0,0,0.12)'; ctx.shadowBlur = c.bonus ? 12 : 8;
     ctx.beginPath(); ctx.ellipse(c.x + c.w / 2, c.y + 20, c.w / 2, 13, 0, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(c.x + c.w * 0.3, c.y + 13, 14, 12, 0, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(c.x + c.w * 0.6, c.y + 9, 18, 14, 0, 0, Math.PI * 2); ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#2a6496'; ctx.font = 'bold 11px Segoe UI, sans-serif'; ctx.textAlign = 'center';
+    if (c.bonus) {
+      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(c.x + c.w / 2, c.y + 20, c.w / 2, 13, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = c.bonus ? '#b45309' : '#2a6496'; ctx.font = c.bonus ? 'bold 13px Segoe UI, sans-serif' : 'bold 11px Segoe UI, sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(c.label, c.x + c.w / 2, c.y + 24);
   }
 
@@ -197,6 +206,12 @@
     if ((keys[' '] || keys['ArrowUp'] || keys['w'])) shoot();
     if (shootCooldown > 0) shootCooldown--;
 
+    // Ammo reload
+    if (ammo < d.maxAmmo) {
+      reloadTimer++;
+      if (reloadTimer >= d.reloadRate) { ammo++; reloadTimer = 0; }
+    }
+
     // Spawn clouds
     spawnTimer++;
     if (spawnTimer > Math.max(d.spawnMin - score * 0.5, 20)) { spawnCloud(d); spawnTimer = 0; }
@@ -218,9 +233,10 @@
       clouds.forEach(c => {
         if (!c.dead && r.y < c.y + 33 && r.y > c.y - 10 && r.x > c.x && r.x < c.x + c.w) {
           c.dead = true;
-          r.y = -999; // remove rocket
+          r.y = -999;
           score++; scoreDisplay.textContent = `Score: ${score}`;
-          explosions.push({ x: c.x + c.w / 2, y: c.y + 15, r: 4, maxR: 28, alpha: 1 });
+          if (c.bonus) ammo = Math.min(ammo + 3, d.maxAmmo);
+          explosions.push({ x: c.x + c.w / 2, y: c.y + 15, r: 4, maxR: c.bonus ? 36 : 28, alpha: 1 });
         }
       });
     });
@@ -239,6 +255,16 @@
     // HUD
     ctx.font = '16px serif'; ctx.textAlign = 'left';
     for (let i = 0; i < lives; i++) ctx.fillText('❤️', 8 + i * 24, 24);
+    // Ammo HUD (all modes)
+    if (ammo !== undefined) {
+      ctx.font = 'bold 13px Segoe UI, sans-serif'; ctx.textAlign = 'right'; ctx.fillStyle = ammo === 0 ? '#ef4444' : '#0ea5e9';
+      ctx.fillText(`🚀 ${ammo} / ${d.maxAmmo}`, W - 8, 24);
+      if (ammo < d.maxAmmo) {
+        const pct = reloadTimer / d.reloadRate;
+        ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.beginPath(); ctx.roundRect(W - 70, 30, 62, 5, 3); ctx.fill();
+        ctx.fillStyle = '#0ea5e9'; ctx.beginPath(); ctx.roundRect(W - 70, 30, 62 * pct, 5, 3); ctx.fill();
+      }
+    }
 
     if (lives <= 0) {
       saveScore(score);
