@@ -1,0 +1,162 @@
+---
+---
+<div class="flex flex-col items-center gap-4">
+  <div id="game-area" class="flex flex-col items-center gap-2">
+    <div class="flex justify-between items-center w-full max-w-sm">
+      <span id="score-display" class="font-bold text-sky-900">Score: 0</span>
+      <div class="flex gap-2 items-center">
+        <div class="flex rounded-full overflow-hidden border-2 border-sky-200 text-xs font-semibold">
+          {['Easy','Medium','Hard'].map((d, i) => (
+            <button class="diff-btn px-3 py-1 transition-colors text-sky-700 hover:bg-sky-100" data-diff={d.toLowerCase()}>{d}</button>
+          ))}
+        </div>
+        <button id="close-game" class="bg-white text-sky-700 font-bold px-4 py-1 rounded-full shadow hover:shadow-md transition-all">✕ Stop</button>
+      </div>
+    </div>
+    <div class="relative">
+      <canvas id="game-canvas" width="400" height="380" class="rounded-2xl shadow-xl"></canvas>
+      <div id="start-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-sky-100/80 rounded-2xl gap-4">
+        <p class="text-sky-900 font-bold text-2xl">☁️ Catch the Clouds!</p>
+        <p class="text-sky-700 text-sm">Use ← → or A / D to move</p>
+        <button id="start-btn" class="bg-sky-700 text-white font-bold px-8 py-3 rounded-full hover:bg-sky-900 transition-colors">▶ Start</button>
+        <div id="leaderboard" class="text-center"></div>
+      </div>
+    </div>
+    <p class="text-sky-700 text-xs">← → Arrow keys or A / D to move</p>
+  </div>
+
+  <div id="game-over-screen" style="display:none;" class="flex flex-col items-center gap-4 bg-white rounded-2xl p-8 shadow-xl">
+    <h2 class="text-2xl font-bold text-sky-900">Game Over!</h2>
+    <p id="final-score" class="text-sky-700 text-lg"></p>
+    <div id="go-leaderboard" class="text-center text-sm text-sky-700"></div>
+    <button id="restart-btn" class="bg-sky-700 text-white font-bold px-8 py-3 rounded-full hover:bg-sky-900 transition-colors">Play Again</button>
+  </div>
+</div>
+
+<script>
+  const gameArea = document.getElementById('game-area') as HTMLDivElement;
+  const gameOverScreen = document.getElementById('game-over-screen') as HTMLDivElement;
+  const startScreen = document.getElementById('start-screen') as HTMLDivElement;
+  const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+  const ctx = canvas.getContext('2d')!;
+  const scoreDisplay = document.getElementById('score-display')!;
+  const finalScore = document.getElementById('final-score')!;
+  // Difficulty pill buttons
+  let currentDiff = 'medium';
+  document.querySelectorAll('.diff-btn').forEach(btn => {
+    const b = btn as HTMLElement;
+    if (b.dataset.diff === 'medium') { b.classList.add('bg-sky-700', 'text-white'); b.classList.remove('text-sky-700'); }
+    b.addEventListener('click', () => {
+      currentDiff = b.dataset.diff!;
+      document.querySelectorAll('.diff-btn').forEach(x => {
+        (x as HTMLElement).classList.remove('bg-sky-700', 'text-white');
+        (x as HTMLElement).classList.add('text-sky-700');
+      });
+      b.classList.add('bg-sky-700', 'text-white');
+      b.classList.remove('text-sky-700');
+    });
+  });
+
+  const DIFF = {
+    easy:   { speed: 1.0, spawnMin: 80, speedInc: 0.008 },
+    medium: { speed: 1.5, spawnMin: 60, speedInc: 0.015 },
+    hard:   { speed: 2.5, spawnMin: 35, speedInc: 0.025 },
+  };
+
+  function getLeaderboard(): number[] {
+    return JSON.parse(localStorage.getItem('cloud-scores') || '[]');
+  }
+  function saveScore(s: number) {
+    const scores = getLeaderboard();
+    scores.push(s);
+    scores.sort((a, b) => b - a);
+    localStorage.setItem('cloud-scores', JSON.stringify(scores.slice(0, 5)));
+  }
+  function renderLeaderboard(el: HTMLElement) {
+    const scores = getLeaderboard();
+    if (!scores.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<p class="font-bold text-sky-900 mb-1">🏆 Top Scores</p>' +
+      scores.map((s, i) => `<p class="text-sky-700 text-xs">${i + 1}. ${s} clouds</p>`).join('');
+  }
+
+  renderLeaderboard(document.getElementById('leaderboard')!);
+
+  document.getElementById('start-btn')!.onclick = () => { startScreen.style.display = 'none'; startGame(); };
+  document.getElementById('close-game')!.onclick = () => { cancelAnimationFrame(raf); startScreen.style.display = 'flex'; renderLeaderboard(document.getElementById('leaderboard')!); };
+  document.getElementById('restart-btn')!.onclick = () => { gameOverScreen.style.display = 'none'; gameArea.style.display = 'flex'; startScreen.style.display = 'flex'; renderLeaderboard(document.getElementById('leaderboard')!); };
+
+  const skills = ['Web Dev','Mobile App','C++','ERP','React','Flutter','SQL','API','UI/UX','Cloud'];
+  const W = canvas.width, H = canvas.height;
+
+  let player: { x: number; w: number; h: number; speed: number };
+  let clouds: { x: number; y: number; w: number; label: string; speed: number; caught: boolean }[];
+  let score: number, lives: number, raf: number, keys: Record<string, boolean>, spawnTimer: number;
+
+  function startGame() {
+    const d = DIFF[currentDiff as keyof typeof DIFF];
+    player = { x: W / 2 - 40, w: 80, h: 18, speed: 6 };
+    clouds = [];
+    score = 0; lives = 3; spawnTimer = 0;
+    keys = {};
+    scoreDisplay.textContent = 'Score: 0';
+    cancelAnimationFrame(raf);
+    loop(d);
+  }
+
+  function spawnCloud(baseSpeed: number, speedInc: number) {
+    const w = 80 + Math.random() * 40;
+    clouds.push({ x: Math.random() * (W - w), y: -40, w, label: skills[Math.floor(Math.random() * skills.length)], speed: baseSpeed + score * speedInc, caught: false });
+  }
+
+  function drawCloud(x: number, y: number, w: number, label: string, caught: boolean) {
+    ctx.fillStyle = caught ? '#b0f0c0' : '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.12)';
+    ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.ellipse(x + w / 2, y + 20, w / 2, 13, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + w * 0.3, y + 13, 14, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + w * 0.6, y + 9, 18, 14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#2a6496'; ctx.font = 'bold 12px Segoe UI, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(label, x + w / 2, y + 24);
+  }
+
+  function drawPlayer(x: number) {
+    const y = H - 55;
+    ctx.fillStyle = '#2a6496'; ctx.beginPath(); ctx.roundRect(x, y, player.w, player.h, 8); ctx.fill();
+    ctx.fillStyle = '#1a4a6e'; ctx.beginPath(); ctx.arc(x + player.w / 2, y - 16, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#87ceeb'; ctx.fillRect(x + player.w / 2 - 9, y - 5, 18, 12);
+  }
+
+  function loop(d: typeof DIFF.medium) {
+    ctx.clearRect(0, 0, W, H);
+    if ((keys['ArrowLeft'] || keys['a']) && player.x > 0) player.x -= player.speed;
+    if ((keys['ArrowRight'] || keys['d']) && player.x + player.w < W) player.x += player.speed;
+    spawnTimer++;
+    if (spawnTimer > Math.max(d.spawnMin - score, 20)) { spawnCloud(d.speed, d.speedInc); spawnTimer = 0; }
+    const playerY = H - 55;
+    clouds.forEach(c => {
+      c.y += c.speed;
+      if (!c.caught && c.y + 33 >= playerY && c.y + 33 <= playerY + player.h + 10 && c.x + c.w > player.x && c.x < player.x + player.w) {
+        c.caught = true; score++; scoreDisplay.textContent = `Score: ${score}`;
+      }
+      if (!c.caught && c.y > H) { c.caught = true; lives--; }
+      drawCloud(c.x, c.y, c.w, c.label, c.caught);
+    });
+    clouds = clouds.filter(c => c.y <= H + 10);
+    drawPlayer(player.x);
+    ctx.font = '16px serif'; ctx.textAlign = 'left';
+    for (let i = 0; i < lives; i++) ctx.fillText('❤️', 8 + i * 24, 24);
+    if (lives <= 0) {
+      saveScore(score);
+      gameArea.style.display = 'none';
+      gameOverScreen.style.display = 'flex';
+      finalScore.textContent = `You caught ${score} clouds! 🎉`;
+      renderLeaderboard(document.getElementById('go-leaderboard')!);
+      return;
+    }
+    raf = requestAnimationFrame(() => loop(d));
+  }
+
+  window.addEventListener('keydown', e => { keys[e.key] = true; if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault(); });
+  window.addEventListener('keyup', e => { keys[e.key] = false; });
+</script>

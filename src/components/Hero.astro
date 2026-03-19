@@ -1,0 +1,25 @@
+---
+import CloudButton from './CloudButton.astro';
+
+const navItems = [
+  { label: 'About Me',   link: '#about'      },
+  { label: 'Skills',     link: '#skills'     },
+  { label: 'Experience', link: '#experience' },
+  { label: 'Work',       link: '#work'       },
+  { label: 'Contact',    link: '#contact'    },
+];
+---
+<section class="text-center px-6 pb-16">
+  <div class="flex flex-col items-center gap-4 mt-8">
+    <div class="flex justify-center gap-6">
+      {navItems.slice(0, 2).map((item, i) => (
+        <CloudButton label={item.label} link={item.link} index={i} />
+      ))}
+    </div>
+    <div class="flex justify-center gap-6">
+      {navItems.slice(2).map((item, i) => (
+        <CloudButton label={item.label} link={item.link} index={i + 2} />
+      ))}
+    </div>
+  </div>
+</section>
